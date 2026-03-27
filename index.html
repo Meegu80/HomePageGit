@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회사 관계도</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --border: #1e2d45;
+    --accent: #00d4ff;
+    --accent2: #ff6b35;
+    --accent3: #7c3aed;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --node-source: #00d4ff;
+    --node-target: #ff6b35;
+    --link: #1e3a5f;
+    --link-hover: #00d4ff44;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #canvas { width: 100%; height: 100%; }
+
+  /* Header */
+  #header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(to bottom, rgba(10,14,26,0.98) 0%, transparent 100%);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  #header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  #header .subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+  }
+
+  /* Legend */
+  #legend {
+    position: fixed;
+    top: 60px;
+    left: 20px;
+    background: rgba(17,24,39,0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    z-index: 10;
+    backdrop-filter: blur(10px);
+  }
+
+  #legend h3 {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 7px;
+    font-size: 12px;
+  }
+
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Controls */
+  #controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+
+  .btn {
+    background: rgba(17,24,39,0.9);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+  }
+
+  .btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    background: rgba(17,24,39,0.97);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 100;
+    display: none;
+    max-width: 260px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.15);
+  }
+
+  #tooltip .tip-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  #tooltip .tip-type {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  #tooltip .tip-connections {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* Search */
+  #search-wrapper {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    z-index: 10;
+  }
+
+  #search {
+    background: rgba(17,24,39,0.9);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'Noto Sans KR', sans-serif;
+    outline: none;
+    width: 180px;
+    transition: border-color 0.2s;
+    backdrop-filter: blur(10px);
+  }
+
+  #search::placeholder { color: var(--text-muted); }
+  #search:focus { border-color: var(--accent); }
+
+  /* Stats */
+  #stats {
+    position: fixed;
+    bottom: 70px;
+    right: 20px;
+    background: rgba(17,24,39,0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+    line-height: 1.8;
+  }
+
+  .stat-num { color: var(--accent); font-weight: 700; }
+
+  .node { cursor: pointer; }
+  .node circle { transition: r 0.2s; }
+  .node text { pointer-events: none; user-select: none; }
+
+  .link {
+    stroke: var(--link);
+    stroke-opacity: 0.6;
+    fill: none;
+  }
+
+  .link.highlighted { stroke: var(--accent); stroke-opacity: 0.8; }
+
+  #filter-bar {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+  }
+
+  .filter-btn {
+    background: rgba(17,24,39,0.85);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: 'Noto Sans KR', sans-serif;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+  }
+
+  .filter-btn:hover, .filter-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,212,255,0.05);
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div>
+    <h1>Company Relationship Graph</h1>
+    <div class="subtitle">반도체 · 디스플레이 · 전자 산업 네트워크</div>
+  </div>
+</div>
+
+<div id="legend">
+  <h3>범례</h3>
+  <div class="legend-item"><div class="legend-dot" style="background:#00d4ff; box-shadow:0 0 6px #00d4ff88"></div><span>협력사 (소스)</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6b35; box-shadow:0 0 6px #ff6b3588"></div><span>대형 고객사</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c3aed; box-shadow:0 0 6px #7c3aed88"></div><span>중간 허브</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#10b981; box-shadow:0 0 6px #10b98188"></div><span>일반 관계사</span></div>
+</div>
+
+<div id="filter-bar">
+  <button class="filter-btn active" onclick="filterBy('all')">전체</button>
+  <button class="filter-btn" onclick="filterBy('대곤')">대곤</button>
+  <button class="filter-btn" onclick="filterBy('삼성전자')">삼성전자</button>
+  <button class="filter-btn" onclick="filterBy('SKHynix')">SK하이닉스</button>
+  <button class="filter-btn" onclick="filterBy('LG전자')">LG전자</button>
+  <button class="filter-btn" onclick="filterBy('SEMES')">SEMES</button>
+  <button class="filter-btn" onclick="filterBy('주성')">주성</button>
+</div>
+
+<div id="search-wrapper">
+  <input type="text" id="search" placeholder="🔍 회사 검색..." oninput="searchNode(this.value)">
+</div>
+
+<div id="stats">
+  <div>협력사 <span class="stat-num" id="s-count">-</span>개</div>
+  <div>관계사 <span class="stat-num" id="t-count">-</span>개</div>
+  <div>연결 <span class="stat-num" id="l-count">-</span>개</div>
+</div>
+
+<div id="controls">
+  <button class="btn" onclick="resetZoom()">↺ 리셋</button>
+  <button class="btn" onclick="toggleLabels()">라벨 토글</button>
+  <button class="btn" onclick="reheat()">⚡ 재배치</button>
+</div>
+
+<div id="tooltip"></div>
+<svg id="canvas"></svg>
+
+<script>
+const rawData = {
+  "에이티아이케이": ["삼성전자","LG전자","SEMES","원익아이피에스","KC텍","주성"],
+  "씨스콤": ["삼성전자","SKHynix"],
+  "씨에스케이": ["삼성전자","SKHynix"],
+  "싸이맥스": ["삼성전자","스에프에이","3S","로체시스템즈","라온테크","저스템","원익아이페이스"],
+  "디바이스이엔지": ["삼성전자","SKHynix","BOE","디엠에스","야스","AP시스템","KC텍","한화정밀기계","LG디스플레이","원익IPS","SK실트론","SFA","주성","한미반도체","제너셈","LG전자","삼성디스플레이","SEMES","TES"],
+  "디아이": ["삼성전자","SKHynix","DB하이텍","KC텍","신성이엔지","SEMES","유니셈","원익IPS","SK실트론","삼성전기","동성케미컬","삼성디스플레이","KC","테크윙","한화솔루션","주성","삼성SDI"],
+  "한국에바라정밀기계": ["삼성전자","SKHynix","마이크론","아드반TES트코리아","엑셀리스코리아","브룩스오토메이션"],
+  "에코에너젠": ["삼성전자","SKHynix","LG전자"],
+  "이오테크닉스": ["삼성전자","SKHynix","TSMC","주성","SEMES","삼성디스플레이","한미반도체","테크윙","SFA"],
+  "이솔": ["삼성전자","SKHynix","ASML","TEL","원익IPS"],
+  "포이스": ["삼성전자","SKHynix","DB하이텍","ISC","TES나"],
+  "제너셈": ["삼성전자","SKHynix","TSMC","INTEL","AMKOR","ASE","LG디스플레이","주성","AP시스템","한화정밀기계","TES","야스","SFA","선익시스템","한미반도체","SEMES","LG전자","디바이스이엔지"],
+  "제니어스": ["삼성디스플레이","LG디스플레이","BOE","CSOT"],
+  "지오테크놀로지": ["삼성전자","SKHynix","GLOBALFOUNDRIES","UMC","TES","PSK","SK실트론","주성","SEMES","한화정밀기계","LG전자","AP시스템","유진테크","제우스","SFA","삼성디스플레이","원익IPS","KC텍"],
+  "기가레인": ["삼성전자","KC텍","유진테크","PSK","SFA","주성","SEMES","한미반도체","LG전자","SK실트론","삼성SDI","원익IPS","삼성디스플레이","한화정밀기계","동우화인켐"],
+  "지앤비에스": ["삼성전자","LG전자","TCL","HISENSE"],
+  "쥐에스티": ["삼성전자","SKHynix","MICRON","TOSHIBA"],
+  "한미반도체": ["SKHynix","AMKOR","ASE","STATS CHIPPAC","주성","유진테크","삼성디스플레이","한화정밀기계","원익홀딩스","KC텍","LG디스플레이","테크윙","SEMES","PSK","신성이엔지","원익IPS","디엠에스","SFA"],
+  "한화정밀기계": ["삼성전자","LG전자","SKHynix","원익IPS","주성","삼성전기","SEMES","삼성SDI","한미반도체","LG디스플레이","KC텍","LG이노텍","삼성디스플레이"],
+  "한양이엔지": ["삼성전자","SKHynix","TSMC","INTEL","LG전자","삼성디스플레이","주성","SEMES","원익IPS","SK실트론","KC","탑엔지니어링","STI","KC텍","SFA"],
+  "하이퓨리티": ["삼성전자","SKHynix","TSMC","INTEL","PSI"],
+  "HIT": ["삼성전자","SKHynix","MICRON","TOSHIBA"],
+  "HJS": ["삼성전자","SKHynix","AMKOR","ASE"],
+  "이노맥스": ["삼성전자","SKHynix"],
+  "아이작리서치": ["삼성전자","SKHynix","TES","원익IPS","주성","SEMES","SFA"],
+  "지올코리아": ["삼성전자","SKHynix","칼자이스"],
+  "저스템": ["삼성전자","SKHynix","TES","주성","KC텍","원익IPS","한화정밀기계","삼성디스플레이","LG전자"],
+  "주성": ["서울반도체","티씨케이","KC","원익홀딩스","인베니아","피SK홀딩스","디엠에스","삼성디스플레이","신성이엔지","탑엔지니어링","SEMES","한미반도체","유진테크","SFA","에스티아이"],
+  "케이케이테크": ["시마즈한국진공기기","다산","한국알박크라이오","엘오티티에스","파이퍼베큠코리아","지에스에이"],
+  "케이씨텍": ["SEMES","SK실트론","SKHynix","동우화인켐","LG디스플레이","솔브레인","LG이노텍","KC씨","삼성전자","주성","LG화학","한화솔루션","LG전자","삼성SDI"],
+  "케이씨이노베이션": ["유니셈","삼성전자","SKHynix"],
+  "고영테크놀로지": ["삼성전자","LG전자","주성","탑엔지니어링","에프에스티","삼성SDI","LG디스플레이","SFA","SEMES","한화시스템","원익IPS","동우화인켐","삼성디스플레이","SK실트론"],
+  "국제전기": ["삼성전자","SKHynix"],
+  "코리아테크노": ["삼성전자","SKHynix","SEMES","SFA","원익IPS","LG전자","KC텍","삼성디스플레이","한화정밀기계","주성","테크윙","TES","한미반도체","KC","케이티","미래컴퍼니","SK실트론"],
+  "코스텍시스템": ["삼성전자","SKHynix"],
+  "코비스테크놀로지": ["SEMES","ISC","한화시스템","SKHynix","LG전자","삼성전자","삼성디스플레이","KC텍","티에스이","테크윙"],
+  "리드": ["삼성전자","SKHynix"],
+  "엘에스테크": ["삼성전자","SKHynix"],
+  "엘에스이주식회사": ["삼성전자","SKHynix"],
+  "엠에이티플러스": ["삼성전자","SKHynix","KC텍","SEMES","SK실트론","삼성디스플레이","원익IPS","TES","주성","LG전자"],
+  "멜콘": ["삼성전자","SKHynix","SK실트론","삼성SDI","LG디스플레이","LG이노텍","TES","삼성디스플레이","주성","KC텍","SEMES","원익IPS","LG전자","LS일렉트릭","LG에너지솔루션"],
+  "메티스": ["삼성전자","SKHynix"],
+  "엔이티": ["삼성전자","SKHynix"],
+  "넥스틴": ["삼성전자","SKHynix","주성","SFA","SEMES","삼성전기","한화정밀기계","삼성디스플레이","한화오션","원익IPS","SK실트론","LG디스플레이","세코닉스","KC텍","한화시스템"],
+  "엔티에스": ["삼성전자","SKHynix","TES","SK실트론","KC텍","삼성디스플레이","LG전자","테크윙","피SK","한화정밀기계","한미반도체","AP시스템","제우스","원익IPS","SEMES","아바코","SFA","주성","디엠에스"],
+  "팸텍": ["삼성전자","SKHynix","KC텍","탑엔지니어링","SFA","TES","티에프이","주성","SK실트론","삼성디스플레이","티에스이","SEMES","테크윙","원익아이피에스","한화정밀기계","한미반도체","LG전자"],
+  "PEMTRON": ["삼성전자","SKHynix","LG에너지솔루션","SK온","삼성디스플레이","원익피앤이","이티에스","에스엘","SFA","LG전자","LG디스플레이"],
+  "프로텍": ["삼성전자","SKHynix","앰코테코노로지(AMKOR TECHNOLOGY)","LG전자","스태츠칩팩코리아"],
+  "PSK": ["삼성전자","SKHynix","마이크론"],
+  "피티씨": ["삼성전자","SKHynix","SEMES","테크윙","LG디스플레이","KC텍","LG전자","마이크로컨텍솔루션","주성","TES","삼성디스플레이","SK실트론","한미반도체"],
+  "라온테크": ["삼성전자","SKHynix","SEMES","한미반도체","한화정밀기계","테크윙","TES","PSK","KC텍","삼성디스플레이","원익IPS","주성","SK실트론","LG전자"],
+  "세메스": ["삼성전자","SKHynix","LG전자","KC","주성","로체시스템즈","KC텍","디엠에스","삼성디스플레이","LG이노텍","LG디스플레이","참엔지니어링","SFA","원익IPS","유진테크"],
+  "세믹스": ["삼성전자","SKHynix"],
+  "STI": ["삼성전자","SKHynix","삼성디스플레이","LG전자","SEMES","아바코","SFA","LG이노텍","주성","한양이엔지","LG화학","KC","KC텍","신성이엔지","SK엔펄스"],
+  "테키스트": ["삼성전자","SKHynix"],
+  "테스": ["삼성전자","SKHynix","주성","원익IPS","PSK","LG디스플레이","삼성디스플레이","제우스","SK실트론","LG전자","한화솔루션","유진테크","SFA","원익머트리얼즈","유니셈","원익홀딩스","SEMES","KC텍"],
+  "티케이씨": ["삼성전자","SKHynix","SEMES","삼성디스플레이","심텍","KC텍","삼성전기","한화정밀기계","LG디스플레이"],
+  "알박": ["삼성전자","SKHynix","LG전자","KC텍","디엠에스","PSK","아바코","KC","AP시스템","삼성전기","한화정밀기계","원익IPS","한미반도체","SFA","유진테크","삼성디스플레이","주성","TES","LG디스플레이","SK실트론"],
+  "유니테스트": ["SKHynix","진성이엔지"],
+  "위드테크": ["삼성전자","SKHynix","LG전자","SFA","TES","삼성디스플레이","한화정밀기계","KC텍","KC","원익IPS","SEMES","한미반도체","LG화학","주성"],
+  "원익아이피에스": ["삼성전자","SKHynix","LG전자","TES","FST","SEMES","삼성디스플레이","유진테크","SFA","디엠에스","삼성전기","AP시스템","싸이맥스","동진쎄미켐","삼성SDI","주성","톱텍","엘엑스세미콘"],
+  "자비스": ["삼성전자","SKHynix","LG전자","원익IPS","케이티","LG이노텍","삼성디스플레이","주성","LG에너지솔루션","SEMES","한화오션","삼성SDI","KC텍"],
+  "와이씨": ["삼성전자","SKHynix","LG전자","삼성전기","LG디스플레이","TSE","SEMES","한화시스템","LS일렉트릭","삼성디스플레이","LG이노텍","테크윙"],
+  "에스티": ["삼성전자","SKHynix","LG전자","한화솔루션","원익IPS","주성","한화정밀기계","SEMES","SFA","선익시스템","TES","에이피시스템","한미반도체","LG디스플레이","삼성디스플레이","SK실트론","PSK"],
+  "제우스": ["삼성전자","SKHynix","LG전자","한화오션","SK실트론","삼성디스플레이","원익홀딩스","TES","KC텍","삼성SDI","LG에너지솔루션","LG디스플레이","SEMES","주성","원익IPS"],
+  "NEOSEM": ["삼성전자","SKHynix","LG전자","SEMES","삼성디스플레이","탑엔지니어링","쎄믹스","마이크로컨텍솔루션","ISC","테크윙","TSE","LG에너지솔루션"],
+  "대곤": ["삼성디스플레이","LG전자","삼성전자","LG디스플레이","현대자동차","기아"]
+};
+
+// Build graph data
+const sourceNodes = new Set(Object.keys(rawData));
+const targetNodes = new Set();
+Object.values(rawData).forEach(arr => arr.forEach(t => targetNodes.add(t)));
+
+// Compute connection counts
+const connectionCount = {};
+Object.entries(rawData).forEach(([src, tgts]) => {
+  connectionCount[src] = (connectionCount[src] || 0) + tgts.length;
+  tgts.forEach(t => { connectionCount[t] = (connectionCount[t] || 0) + 1; });
+});
+
+// Major hubs (connected to many sources)
+const hubThreshold = 10;
+
+const allNodes = new Set([...sourceNodes, ...targetNodes]);
+const nodes = [...allNodes].map(id => ({
+  id,
+  isSource: sourceNodes.has(id),
+  isTarget: targetNodes.has(id) && !sourceNodes.has(id),
+  connections: connectionCount[id] || 0,
+  isHub: (connectionCount[id] || 0) >= hubThreshold
+}));
+
+const links = [];
+const seen = new Set();
+Object.entries(rawData).forEach(([src, tgts]) => {
+  tgts.forEach(tgt => {
+    const key = `${src}||${tgt}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      links.push({ source: src, target: tgt });
+    }
+  });
+});
+
+document.getElementById('s-count').textContent = sourceNodes.size;
+document.getElementById('t-count').textContent = [...targetNodes].filter(t => !sourceNodes.has(t)).length;
+document.getElementById('l-count').textContent = links.length;
+
+const svg = d3.select('#canvas');
+const width = window.innerWidth;
+const height = window.innerHeight;
+
+svg.attr('width', width).attr('height', height);
+
+const g = svg.append('g');
+
+const zoom = d3.zoom()
+  .scaleExtent([0.1, 4])
+  .on('zoom', e => g.attr('transform', e.transform));
+
+svg.call(zoom);
+
+// Gradient defs
+const defs = svg.append('defs');
+const glow = defs.append('filter').attr('id','glow');
+glow.append('feGaussianBlur').attr('stdDeviation','3').attr('result','coloredBlur');
+const feMerge = glow.append('feMerge');
+feMerge.append('feMergeNode').attr('in','coloredBlur');
+feMerge.append('feMergeNode').attr('in','SourceGraphic');
+
+const simulation = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+    const t = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
+    return t && t.isHub ? 80 : 120;
+  }))
+  .force('charge', d3.forceManyBody().strength(d => d.isHub ? -600 : -200))
+  .force('center', d3.forceCenter(width / 2, height / 2))
+  .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 8));
+
+function nodeRadius(d) {
+  if (d.isHub) return Math.min(28, 10 + d.connections * 0.8);
+  if (d.isSource) return Math.min(18, 6 + d.connections * 0.4);
+  return Math.min(14, 5 + d.connections * 0.3);
+}
+
+function nodeColor(d) {
+  if (d.isHub) return '#7c3aed';
+  if (d.isSource && !d.isTarget) return '#00d4ff';
+  if (!d.isSource && d.isTarget) return '#ff6b35';
+  return '#10b981';
+}
+
+const link = g.append('g').attr('class','links')
+  .selectAll('line').data(links).join('line')
+  .attr('class','link')
+  .attr('stroke-width', 1);
+
+const node = g.append('g').attr('class','nodes')
+  .selectAll('g').data(nodes).join('g')
+  .attr('class','node')
+  .call(d3.drag()
+    .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+  );
+
+node.append('circle')
+  .attr('r', nodeRadius)
+  .attr('fill', d => nodeColor(d) + '22')
+  .attr('stroke', nodeColor)
+  .attr('stroke-width', d => d.isHub ? 2.5 : 1.5)
+  .style('filter', d => d.isHub ? 'url(#glow)' : 'none');
+
+let showLabels = true;
+
+const labels = node.append('text')
+  .text(d => d.id)
+  .attr('text-anchor','middle')
+  .attr('dy', d => nodeRadius(d) + 12)
+  .attr('fill', d => nodeColor(d))
+  .attr('font-size', d => d.isHub ? 11 : 9)
+  .attr('font-weight', d => d.isHub ? 700 : 400)
+  .attr('opacity', d => d.isHub || d.isSource ? 0.9 : 0.65);
+
+// Tooltip
+const tip = document.getElementById('tooltip');
+
+node.on('mouseover', function(e, d) {
+  // Highlight connected links
+  link.attr('class', l => {
+    const src = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+    return (src === d.id || tgt === d.id) ? 'link highlighted' : 'link';
+  });
+  link.attr('stroke-width', l => {
+    const src = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+    return (src === d.id || tgt === d.id) ? 2 : 1;
+  });
+
+  // Neighbors
+  const neighbors = links
+    .filter(l => (typeof l.source === 'object' ? l.source.id : l.source) === d.id || (typeof l.target === 'object' ? l.target.id : l.target) === d.id)
+    .map(l => {
+      const sid = typeof l.source === 'object' ? l.source.id : l.source;
+      const tid = typeof l.target === 'object' ? l.target.id : l.target;
+      return sid === d.id ? tid : sid;
+    });
+
+  const typeLabel = d.isHub ? '허브 노드' : (d.isSource && !d.isTarget ? '협력사' : (!d.isSource && d.isTarget ? '고객사' : '양방향 관계사'));
+  tip.innerHTML = `
+    <div class="tip-title">${d.id}</div>
+    <div class="tip-type">${typeLabel} · 연결 ${d.connections}개</div>
+    <div class="tip-connections">${neighbors.slice(0,8).join(' · ')}${neighbors.length > 8 ? ` 외 ${neighbors.length - 8}개` : ''}</div>
+  `;
+  tip.style.display = 'block';
+  tip.style.left = (e.pageX + 14) + 'px';
+  tip.style.top = (e.pageY - 10) + 'px';
+})
+.on('mousemove', e => {
+  tip.style.left = (e.pageX + 14) + 'px';
+  tip.style.top = (e.pageY - 10) + 'px';
+})
+.on('mouseout', function() {
+  link.attr('class','link').attr('stroke-width', 1);
+  tip.style.display = 'none';
+});
+
+simulation.on('tick', () => {
+  link
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x)
+    .attr('y2', d => d.target.y);
+  node.attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+function resetZoom() {
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+}
+
+function toggleLabels() {
+  showLabels = !showLabels;
+  labels.attr('display', showLabels ? null : 'none');
+}
+
+function reheat() {
+  simulation.alpha(0.8).restart();
+}
+
+function searchNode(val) {
+  if (!val) {
+    node.style('opacity', 1);
+    link.style('opacity', 0.6);
+    return;
+  }
+  const v = val.toLowerCase();
+  node.style('opacity', d => d.id.toLowerCase().includes(v) ? 1 : 0.1);
+  link.style('opacity', l => {
+    const sid = typeof l.source === 'object' ? l.source.id : l.source;
+    const tid = typeof l.target === 'object' ? l.target.id : l.target;
+    return (sid.toLowerCase().includes(v) || tid.toLowerCase().includes(v)) ? 0.8 : 0.05;
+  });
+}
+
+function filterBy(company) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  if (company === 'all') {
+    node.style('opacity', 1);
+    link.style('opacity', 0.6);
+    return;
+  }
+
+  const related = new Set([company]);
+  links.forEach(l => {
+    const sid = typeof l.source === 'object' ? l.source.id : l.source;
+    const tid = typeof l.target === 'object' ? l.target.id : l.target;
+    if (sid === company) related.add(tid);
+    if (tid === company) related.add(sid);
+  });
+
+  node.style('opacity', d => related.has(d.id) ? 1 : 0.08);
+  link.style('opacity', l => {
+    const sid = typeof l.source === 'object' ? l.source.id : l.source;
+    const tid = typeof l.target === 'object' ? l.target.id : l.target;
+    return (sid === company || tid === company) ? 0.85 : 0.04;
+  });
+}
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  svg.attr('width', w).attr('height', h);
+  simulation.force('center', d3.forceCenter(w/2, h/2)).alpha(0.3).restart();
+});
+</script>
+</body>
+</html>
